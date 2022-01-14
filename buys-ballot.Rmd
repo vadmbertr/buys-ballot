@@ -1,0 +1,179 @@
+---
+title: "Buys-Ballot"
+output: 
+  pdf_document:
+    extra_dependencies: ["amsmath"]
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Modélisation
+
+On considère le modèle suivant :
+
+$$
+x_t = a + b*t + s_k + e_t
+$$
+avec
+$$
+t \in \{1, ..., n\}
+$$
+$$
+k \in \{1, ..., T\}
+$$
+
+En explicitant les coefficients de la composante saisonnière le modèle s'écrit
+
+$$
+x_t = a + b*t + s_k * \alpha_{k,t} + e_t
+$$
+avec
+$$
+\alpha_{k,t} = \begin{cases} \mbox{1,} & \mbox{si } k-1 = (t-1) \bmod T \\ \mbox{0,} & \mbox{sinon} \end{cases}
+$$
+
+Ce qui se traduit sous la forme matricielle par
+
+$$ 
+X \cdot \beta = y
+$$
+avec
+$$
+X=
+\begin{bmatrix} 
+1         & 1         & 1         & 0         & \cdots    & 0         \\
+\vdots    & \vdots    & 0         & \ddots    & \ddots    & \vdots    \\
+\vdots    & \vdots    & \vdots    & \ddots    & \ddots    & 0         \\
+\vdots    & \vdots    & 0         & \cdots    & 0         & 1         \\
+\vdots    & \vdots    &           & \vdots    &           &           \\
+\vdots    & \vdots    & 1         & 0         & \cdots    & 0         \\
+\vdots    & \vdots    & 0         & \ddots    & \ddots    & \vdots    \\
+\vdots    & \vdots    & \vdots    & \ddots    & \ddots    & 0         \\
+1         & n         & 0         & \cdots    & 0         & 1
+\end{bmatrix}
+$$
+
+___Problème___ : on ne pourras pas estimer $\beta = (X^t \cdot X)^{-1} \cdot X^t \cdot y$ avec les MCO car la 1ère colonne de $X$ est une combinaison linéaire des $T$ dernières colonnes, donc $X^t \cdot X$ n'est pas inversible.
+
+___Approche 1___
+
+```{r}
+plot(c(USAccDeaths), ylim = c(-1000, 12000), t = "l")
+
+a <- 9211.8
+b <- -11.6
+abline(a= a, b = b, col = "red", lty = 2)
+abline(a = 0, b = b, col = "blue", lty = 2)
+for (i in 0:(length(USAccDeaths)/12-1)) {
+  abline(v = 12/2 + i*12, lty = 3)
+}
+```
+
+On peut supprimer le coefficient du point d'intersection, ce qui donne le modèle
+
+$$
+x_t = b'*t + s'_k + e'_t
+$$
+
+Et sous forme matricielle
+
+$$
+X' \cdot \beta' = y
+$$
+avec
+$$
+X' =
+\begin{bmatrix} 
+1         & 1         & 0         & \cdots    & 0         \\
+\vdots    & 0         & \ddots    & \ddots    & \vdots    \\
+\vdots    & \vdots    & \ddots    & \ddots    & 0         \\
+\vdots    & 0         & \cdots    & 0         & 1         \\
+\vdots    &           & \vdots    &           &           \\
+\vdots    & 1         & 0         & \cdots    & 0         \\
+\vdots    & 0         & \ddots    & \ddots    & \vdots    \\
+\vdots    & \vdots    & \ddots    & \ddots    & 0         \\
+n         & 0         & \cdots    & 0         & 1
+\end{bmatrix}
+$$
+
+Maintenant $(X')^t \cdot X'$ est inversible.
+
+Une fois que l'on a estimé les $\beta'$ avec les MCO en utilisant le modèle sans coefficient d'intersection, on peut facilement retrouver les coefficients $\beta$ du modèle avec coefficient d'intersection :
+
+$$
+a = \frac{1}{T} \sum_{k=1}^{T} s'_k
+$$
+$$
+b = b'
+$$
+$$
+s_k = s'_k - \frac{1}{T} \sum_{k=1}^{T} s'_k
+$$
+
+Les estimations des deux modèles sont équivalentes : $a + b*t + s_k = b'*t + s'_k$.
+
+___Approche 2___
+
+On peut aussi utiliser la propriété $\sum_{k=1}^{T} s_k = 0$ pour estimer seulement $T-1$ $s_k$
+
+$$
+X'' \cdot \beta'' = y
+$$
+avec
+$$
+X'' =
+\begin{bmatrix} 
+1         & 1         & 1         & 0         & \cdots    & 0         \\
+\vdots    & \vdots    & 0         & \ddots    & \ddots    & \vdots    \\
+\vdots    & \vdots    & \vdots    & \ddots    & \ddots    & 0         \\
+\vdots    & \vdots    & 0         & \cdots    & 0         & 1         \\
+\vdots    & \vdots    & -1        & \cdots    & \cdots    & -1        \\
+\vdots    & \vdots    &           & \vdots    &           &           \\
+\vdots    & \vdots    & 1         & 0         & \cdots    & 0         \\
+\vdots    & \vdots    & 0         & \ddots    & \ddots    & \vdots    \\
+\vdots    & \vdots    & \vdots    & \ddots    & \ddots    & 0         \\
+\vdots    & \vdots    & 0         & \cdots    & 0         & 1         \\
+1         & n         & -1        & \cdots    & \cdots    & -1
+\end{bmatrix}
+$$
+
+Et ici $(X'')^t \cdot X''$ est inversible.
+
+### Application au jeu _USAccDeaths_
+
+```{r}
+y <- as.vector(USAccDeaths)
+n <- length(USAccDeaths)
+T <- 12
+
+USAccDeaths.Xs <- do.call("rbind", rep(list(diag(1, ncol = T, nrow = T)), n/T))
+
+X.p <- cbind(1:n, USAccDeaths.Xs)
+betas.p <- solve(t(X.p) %*% X.p) %*% t(X.p) %*% y
+USAccDeaths.estimate.p <- ts(X.p %*% betas.p, start = c(1973, 1), freq = 12)
+print(betas.p)
+
+X <- cbind(rep(1, n), 1:n, USAccDeaths.Xs)
+betas <- matrix(c(
+  mean(betas.p[2:length(betas.p)]),
+  betas.p[1], 
+  betas.p[2:length(betas.p)] - mean(betas.p[2:length(betas.p)])))
+USAccDeaths.estimate <- ts(X %*% betas, start = c(1973, 1), freq = 12)
+print(betas)
+
+USAccDeaths.Xs.s <- do.call("rbind", 
+                            rep(list(rbind(diag(1, ncol = T-1, nrow = T-1), 
+                                         rep(-1, T-1))),
+                                n/T))
+X.s <- cbind(rep(1, n), 1:n, USAccDeaths.Xs.s)
+betas.s <- solve(t(X.s) %*% X.s) %*% t(X.s) %*% y
+USAccDeaths.estimate.s <- ts(X.s %*% betas.s, start = c(1973, 1), freq = 12)
+print(betas.s)
+
+plot(USAccDeaths, col = "grey")
+lines(USAccDeaths.estimate.p, col = "blue", lty = 1)
+lines(USAccDeaths.estimate, col = "red", lty = 2)
+lines(USAccDeaths.estimate.s, col = "green", lty = 3)
+```
